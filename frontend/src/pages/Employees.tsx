@@ -3,7 +3,7 @@ import axios from 'axios';
 import { deleteEmployee, listEmployees, updateEmployee } from '../api/employees';
 import { listCoordinators } from '../api/coordinators';
 import { downloadExport, downloadParticipantDetails } from '../api/attendance';
-import type { Coordinator, Employee } from '../types';
+import type { AttendanceRole, Coordinator, Employee } from '../types';
 import { EmployeeFormModal } from '../components/EmployeeFormModal';
 import { EnrollFaceModal } from '../components/EnrollFaceModal';
 import { Download, ScanFace, Pencil, Trash2, UserX, UserCheck } from 'lucide-react';
@@ -26,6 +26,7 @@ export function EmployeesPage() {
   const [areaFilter, setAreaFilter] = useState(
     () => new URLSearchParams(window.location.search).get('area') ?? ''
   );
+  const [roleFilter, setRoleFilter] = useState<AttendanceRole | 'LS,LSS' | ''>('');
   const [showInactive, setShowInactive] = useState(false);
   const [search, setSearch] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -41,6 +42,7 @@ export function EmployeesPage() {
       const data = await listEmployees({
         pc_id: pcFilter || undefined,
         area: areaFilter || undefined,
+        role: roleFilter || undefined,
         is_active: showInactive ? undefined : true,
         search: search || undefined,
         page,
@@ -53,7 +55,7 @@ export function EmployeesPage() {
     } finally {
       setLoading(false);
     }
-  }, [pcFilter, areaFilter, showInactive, search, page]);
+  }, [pcFilter, areaFilter, roleFilter, showInactive, search, page]);
 
   useEffect(() => {
     load();
@@ -61,7 +63,7 @@ export function EmployeesPage() {
 
   useEffect(() => {
     setPage(1);
-  }, [pcFilter, areaFilter, showInactive, search]);
+  }, [pcFilter, areaFilter, roleFilter, showInactive, search]);
 
   useEffect(() => {
     Promise.all([
@@ -146,6 +148,7 @@ export function EmployeesPage() {
         year: now.getFullYear(),
         pc_id: pcFilter || undefined,
         area: areaFilter || undefined,
+        role: roleFilter || undefined,
       });
     } catch {
       setError('Could not export attendance for these filters. Please try again.');
@@ -161,6 +164,7 @@ export function EmployeesPage() {
       await downloadParticipantDetails({
         pc_id: pcFilter || undefined,
         area: areaFilter || undefined,
+        role: roleFilter || undefined,
         is_active: showInactive ? undefined : true,
         search: search || undefined,
       });
@@ -230,6 +234,23 @@ export function EmployeesPage() {
           ))}
         </select>
         <select
+          value={roleFilter}
+          onChange={(e) => setRoleFilter(e.target.value as AttendanceRole | 'LS,LSS' | '')}
+          aria-label="Filter by participant role"
+          className="px-2 py-1.5 rounded-md text-sm border"
+          style={{
+            background: 'var(--color-surface-raised)',
+            borderColor: 'var(--color-border)',
+            color: 'var(--color-ink-muted)',
+          }}
+        >
+          <option value="">All roles</option>
+          <option value="FS">Field Supervisors (FS)</option>
+          <option value="LS,LSS">Local Supervisors (LS + LSS)</option>
+          <option value="LS">LS only</option>
+          <option value="LSS">LSS only</option>
+        </select>
+        <select
           value={areaFilter}
           onChange={(e) => setAreaFilter(e.target.value)}
           aria-label="Filter by participant area"
@@ -243,17 +264,18 @@ export function EmployeesPage() {
           <option value="">All areas</option>
           {areas.map((area) => <option key={area} value={area}>{area}</option>)}
         </select>
-        {(pcFilter || areaFilter) && (
+        {(pcFilter || areaFilter || roleFilter) && (
           <button
             onClick={() => {
               setPcFilter('');
               setAreaFilter('');
+              setRoleFilter('');
               window.history.replaceState(null, '', window.location.pathname);
             }}
             className="px-2 py-1.5 rounded-md text-sm border"
             style={{ borderColor: 'var(--color-border)', color: 'var(--color-ink-muted)' }}
           >
-            Clear coordinator/area
+            Clear filters
           </button>
         )}
         <label className="flex items-center gap-1.5 text-sm" style={{ color: 'var(--color-ink-muted)' }}>

@@ -592,7 +592,11 @@ async def list_employees(
     if designation is not None:
         query["designation"] = designation
     if role is not None:
-        query["role"] = role
+        role_values = [value.strip() for value in role.split(",") if value.strip()]
+        if len(role_values) == 1:
+            query["role"] = role_values[0]
+        elif role_values:
+            query["role"] = {"$in": role_values}
     if parent_employee_id is not None:
         query["parent_employee_id"] = parent_employee_id
     if is_active is not None:
@@ -623,6 +627,8 @@ async def get_admin_last_seen():
 async def list_attendance(
     employee_id: str | None = None,
     pc_id: str | None = None,
+    role: str | None = None,
+    area: str | None = None,
     verdict: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -642,10 +648,31 @@ async def list_attendance(
     if coordinator_ids:
         query["$nor"] = [{"employee_id": {"$in": coordinator_ids}}]
 
-    if employee_id is not None:
-        query["employee_id"] = employee_id
     if verdict is not None:
         query["verdict"] = verdict
+
+    employee_scope: set[str] | None = None
+
+    def restrict_to_employee_ids(employee_ids):
+        nonlocal employee_scope
+        matched_ids = {str(value) for value in employee_ids}
+        employee_scope = (
+            matched_ids if employee_scope is None else employee_scope & matched_ids
+        )
+
+    if employee_id is not None:
+        restrict_to_employee_ids([employee_id])
+
+    if pc_id is not None:
+        employee_ids = [pc_id]
+        employee_ids.extend(e.employee_id for e in await list_employees_by_pc(pc_id))
+        restrict_to_employee_ids(employee_ids)
+
+    if area is not None or role is not None:
+        participants, _ = await list_employees(
+            area=area, role=role, page=1, page_size=100_000
+        )
+        restrict_to_employee_ids(person.employee_id for person in participants)
 
     if date_from is not None or date_to is not None:
         date_conditions = []
@@ -670,21 +697,15 @@ async def list_attendance(
         elif len(date_conditions) > 1:
             query["$and"] = date_conditions
 
-    if pc_id is not None:
-        employee_ids = [pc_id]
-        employee_ids.extend(e.employee_id for e in await list_employees_by_pc(pc_id))
-        query["employee_id"] = {"$in": employee_ids}
-
     if search:
         matching, _ = await list_employees(search=search, page=1, page_size=10_000)
         matching_pcs, _ = await list_coordinators(search=search, page_size=10_000)
         matched_ids = [e.employee_id for e in matching]
         matched_ids.extend(pc.pc_id for pc in matching_pcs)
-        if "employee_id" in query and isinstance(query["employee_id"], dict):
-            existing_ids = set(query["employee_id"]["$in"])
-            query["employee_id"] = {"$in": list(existing_ids & set(matched_ids))}
-        else:
-            query["employee_id"] = {"$in": matched_ids}
+        restrict_to_employee_ids(matched_ids)
+
+    if employee_scope is not None:
+        query["employee_id"] = {"$in": sorted(employee_scope)}
 
     total = await db.submissions.count_documents(query)
     skip = (page - 1) * page_size

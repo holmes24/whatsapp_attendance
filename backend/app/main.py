@@ -517,6 +517,7 @@ async def get_employees(
 async def export_employee_details(
     pc_id: str | None = None,
     area: str | None = None,
+    role: str | None = None,
     is_active: bool | None = None,
     search: str | None = None,
     admin: AdminUser = Depends(get_current_admin),
@@ -525,6 +526,7 @@ async def export_employee_details(
     employees, _ = await list_employees(
         pc_id=pc_id,
         area=area,
+        role=role,
         is_active=is_active,
         search=search,
         page=1,
@@ -628,6 +630,8 @@ async def patch_attendance_override(
 async def get_attendance(
     employee_id: str | None = None,
     pc_id: str | None = None,
+    role: str | None = None,
+    area: str | None = None,
     verdict: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
@@ -649,7 +653,7 @@ async def get_attendance(
     issues_display for UI text; issues[] if you need the raw codes.
     """
     records, total = await list_attendance(
-        employee_id=employee_id, pc_id=pc_id, verdict=verdict,
+        employee_id=employee_id, pc_id=pc_id, role=role, area=area, verdict=verdict,
         date_from=date_from, date_to=date_to, search=search,
         page=page, page_size=page_size,
     )
@@ -881,6 +885,7 @@ async def export_attendance(
     pc_id: str | None = None,
     employee_id: str | None = None,
     area: str | None = None,
+    role: str | None = None,
     admin: AdminUser = Depends(get_current_admin),
 ):
     """
@@ -910,7 +915,9 @@ async def export_attendance(
     # Keep coordinator names for employee hierarchy labels; PCs are not attendance participants.
     coordinators, _ = await list_coordinators(pc_id=pc_id, page_size=100_000)
     coordinators = [c.model_dump() for c in coordinators]
-    employees, _ = await list_employees(pc_id=pc_id, area=area, page_size=100_000)
+    employees, _ = await list_employees(
+        pc_id=pc_id, area=area, role=role, page_size=100_000
+    )
     employees = [e.model_dump() for e in employees]
     if employee_id is not None:
         employees = [

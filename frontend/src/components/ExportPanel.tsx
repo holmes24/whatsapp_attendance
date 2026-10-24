@@ -1,14 +1,20 @@
 import { useState } from 'react';
 import { downloadExport } from '../api/attendance';
-import type { Coordinator } from '../types';
+import type { AttendanceRole, Coordinator } from '../types';
 
 const now = new Date();
 
 export function ExportPanel({
   coordinators,
+  areas,
+  initialRole,
+  initialArea,
   onClose,
 }: {
   coordinators: Coordinator[];
+  areas: string[];
+  initialRole: AttendanceRole | 'LS,LSS' | '';
+  initialArea: string;
   onClose: () => void;
 }) {
   // The API accepts EITHER month+year OR a date range, never both — the mode
@@ -19,6 +25,8 @@ export function ExportPanel({
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [pcId, setPcId] = useState('');
+  const [role, setRole] = useState<AttendanceRole | 'LS,LSS' | ''>(initialRole);
+  const [area, setArea] = useState(initialArea);
   const [downloading, setDownloading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -27,9 +35,9 @@ export function ExportPanel({
     setError(null);
     try {
       if (mode === 'month') {
-        await downloadExport({ month, year, pc_id: pcId || undefined });
+        await downloadExport({ month, year, pc_id: pcId || undefined, role: role || undefined, area: area || undefined });
       } else {
-        await downloadExport({ date_from: dateFrom, date_to: dateTo, pc_id: pcId || undefined });
+        await downloadExport({ date_from: dateFrom, date_to: dateTo, pc_id: pcId || undefined, role: role || undefined, area: area || undefined });
       }
       onClose();
     } catch {
@@ -148,6 +156,35 @@ export function ExportPanel({
               {c.name}
             </option>
           ))}
+        </select>
+
+        <label className="block text-xs mb-1" style={{ color: 'var(--color-ink-muted)' }}>
+          Supervisor role (optional)
+        </label>
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as AttendanceRole | 'LS,LSS' | '')}
+          className="w-full mb-4 px-2 py-1.5 rounded-md text-sm border"
+          style={{ background: 'var(--color-surface-sunken)', borderColor: 'var(--color-border)', color: 'var(--color-ink)' }}
+        >
+          <option value="">All roles</option>
+          <option value="FS">Field supervisors (FS)</option>
+          <option value="LS,LSS">Local supervisors (LS + LSS)</option>
+          <option value="LS">Local supervisors (LS)</option>
+          <option value="LSS">Local supervisors (LSS)</option>
+        </select>
+
+        <label className="block text-xs mb-1" style={{ color: 'var(--color-ink-muted)' }}>
+          Area (optional)
+        </label>
+        <select
+          value={area}
+          onChange={(e) => setArea(e.target.value)}
+          className="w-full mb-4 px-2 py-1.5 rounded-md text-sm border"
+          style={{ background: 'var(--color-surface-sunken)', borderColor: 'var(--color-border)', color: 'var(--color-ink)' }}
+        >
+          <option value="">All areas</option>
+          {areas.map((value) => <option key={value} value={value}>{value}</option>)}
         </select>
 
         <div

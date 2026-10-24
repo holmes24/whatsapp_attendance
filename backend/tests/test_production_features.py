@@ -13,6 +13,8 @@ from app.db.database import (
     Coordinator,
     RosterEntry,
     _validated_hierarchy,
+    list_attendance,
+    list_employees,
     migrate_legacy_reporting_hierarchy,
 )
 from app.services.attendance_export_xlsx import (
@@ -33,6 +35,33 @@ from app.main import (
     get_attendance,
     patch_attendance_override,
 )
+
+
+class RoleAndAreaFilterQueryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_employee_role_filter_accepts_multiple_roles(self):
+        class EmptyCursor:
+            def skip(self, _):
+                return self
+
+            def limit(self, _):
+                return self
+
+            def __aiter__(self):
+                async def empty():
+                    if False:
+                        yield None
+                return empty()
+
+        captured = {}
+
+        def find(query):
+            captured["query"] = query
+            return EmptyCursor()
+
+        roster = SimpleNamespace(count_documents=AsyncMock(return_value=0), find=find)
+        with patch("app.db.database.get_db", return_value=SimpleNamespace(roster=roster)):
+            await list_employees(role="LS,LSS")
+        self.assertEqual(captured["query"]["role"], {"$in": ["LS", "LSS"]})
 
 
 class OptionalAttendanceOverrideReasonTests(unittest.IsolatedAsyncioTestCase):
@@ -475,6 +504,7 @@ class ParticipantDetailsExportEndpointTests(unittest.IsolatedAsyncioTestCase):
         list_people.assert_awaited_once_with(
             pc_id="PC001",
             area="Asthi",
+            role=None,
             is_active=True,
             search="Charan",
             page=1,

@@ -5,6 +5,8 @@ import type { AttendanceGrid, AttendanceRole, AttendanceRecord, PageMeta, Verdic
 export interface AttendanceListParams {
   employee_id?: string;
   pc_id?: string;
+  role?: AttendanceRole | 'LS,LSS';
+  area?: string;
   verdict?: Verdict;
   date_from?: string; // YYYY-MM-DD
   date_to?: string;
@@ -125,6 +127,7 @@ export interface ExportParams {
   pc_id?: string;
   employee_id?: string;
   area?: string;
+  role?: AttendanceRole | 'LS,LSS';
 }
 
 // Excel export can't go through a normal fetch-and-parse call — it's a
@@ -142,7 +145,7 @@ export async function downloadExport(params: ExportParams) {
   const label = params.month
     ? `attendance_${params.year}-${String(params.month).padStart(2, '0')}`
     : `attendance_${params.date_from}_to_${params.date_to}`;
-  const scope = params.employee_id ?? params.pc_id ?? params.area;
+  const scope = params.employee_id ?? params.pc_id ?? params.area ?? params.role;
   link.download = `${label}${scope ? `_${scope.replace(/[^A-Za-z0-9_-]+/g, '_')}` : ''}.xlsx`;
   document.body.appendChild(link);
   link.click();
@@ -153,6 +156,7 @@ export async function downloadExport(params: ExportParams) {
 export interface ParticipantDetailsExportParams {
   pc_id?: string;
   area?: string;
+  role?: AttendanceRole | 'LS,LSS';
   is_active?: boolean;
   search?: string;
 }
@@ -165,7 +169,7 @@ export async function downloadParticipantDetails(params: ParticipantDetailsExpor
   const url = window.URL.createObjectURL(new Blob([data]));
   const link = document.createElement('a');
   link.href = url;
-  const scope = [params.pc_id, params.area].filter(Boolean).join('_');
+  const scope = [params.pc_id, params.area, params.role].filter(Boolean).join('_');
   link.download = `attendance_participants${scope ? `_${scope.replace(/[^A-Za-z0-9_-]+/g, '_')}` : ''}.xlsx`;
   document.body.appendChild(link);
   link.click();

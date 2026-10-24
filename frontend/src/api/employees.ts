@@ -5,7 +5,7 @@ export interface EmployeeListParams {
   pc_id?: string;
   area?: string;
   designation?: string;
-  role?: Exclude<AttendanceRole, 'PC'>;
+  role?: Exclude<AttendanceRole, 'PC'> | 'LS,LSS';
   parent_employee_id?: string;
   is_active?: boolean;
   page?: number;

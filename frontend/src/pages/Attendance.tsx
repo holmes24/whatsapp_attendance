@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { deleteAttendance, listAttendance, overrideAttendanceCell } from '../api/attendance';
 import { listCoordinators } from '../api/coordinators';
 import { listEmployees } from '../api/employees';
-import type { AttendanceRecord, Coordinator, Employee, Verdict } from '../types';
+import type { AttendanceRecord, AttendanceRole, Coordinator, Employee, Verdict } from '../types';
 import { ReviewStatusBadge, ShiftStatusBadge, FaceMatchStatus } from '../components/StatusBadge';
 import { ResolveModal } from '../components/ResolveModal';
 import { ExportPanel } from '../components/ExportPanel';
@@ -51,11 +51,14 @@ export function AttendancePage() {
   const [page, setPage] = useState(1);
   const [coordinators, setCoordinators] = useState<Coordinator[]>([]);
   const [employeeMap, setEmployeeMap] = useState<Record<string, Employee>>({});
+  const [areas, setAreas] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   const [verdict, setVerdict] = useState<Verdict | ''>('');
   const [pcId, setPcId] = useState('');
+  const [role, setRole] = useState<AttendanceRole | 'LS,LSS' | ''>('');
+  const [area, setArea] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [search, setSearch] = useState('');
@@ -77,6 +80,8 @@ export function AttendancePage() {
       const data = await listAttendance({
         verdict: verdict || undefined,
         pc_id: pcId || undefined,
+        role: role || undefined,
+        area: area || undefined,
         date_from: dateFrom || undefined,
         date_to: dateTo || undefined,
         search: search || undefined,
@@ -90,7 +95,7 @@ export function AttendancePage() {
     } finally {
       setLoading(false);
     }
-  }, [verdict, pcId, dateFrom, dateTo, search, page]);
+  }, [verdict, pcId, role, area, dateFrom, dateTo, search, page]);
 
   useEffect(() => {
     load();
@@ -100,7 +105,7 @@ export function AttendancePage() {
   // result set would just show an empty page.
   useEffect(() => {
     setPage(1);
-  }, [verdict, pcId, dateFrom, dateTo, search]);
+  }, [verdict, pcId, role, area, dateFrom, dateTo, search]);
 
   useEffect(() => {
     listCoordinators().then((r) => setCoordinators(r.coordinators)).catch(() => {});
@@ -108,13 +113,14 @@ export function AttendancePage() {
     // the full employee list once so the table can show names instead of
     // raw IDs. page_size is generous since there's no "get everything"
     // endpoint; fine for the scale this app runs at.
-    listEmployees({ page_size: 500 })
+    listEmployees({ page_size: 100000 })
       .then((r) => {
         const map: Record<string, Employee> = {};
         r.employees.forEach((e) => {
           map[e.employee_id] = e;
         });
         setEmployeeMap(map);
+        setAreas([...new Set(r.employees.map((e) => e.area?.trim()).filter((value): value is string => Boolean(value)))].sort((a, b) => a.localeCompare(b)));
       })
       .catch(() => {});
   }, []);
@@ -236,6 +242,31 @@ export function AttendancePage() {
               {c.name}
             </option>
           ))}
+        </select>
+
+        <select
+          value={role}
+          onChange={(e) => setRole(e.target.value as AttendanceRole | 'LS,LSS' | '')}
+          className="px-2 py-1.5 rounded-md text-sm border"
+          style={{ background: 'var(--color-surface-raised)', borderColor: 'var(--color-border)', color: 'var(--color-ink-muted)' }}
+          aria-label="Filter by supervisor role"
+        >
+          <option value="">All roles</option>
+          <option value="FS">Field supervisors (FS)</option>
+          <option value="LS,LSS">Local supervisors (LS + LSS)</option>
+          <option value="LS">Local supervisors (LS)</option>
+          <option value="LSS">Local supervisors (LSS)</option>
+        </select>
+
+        <select
+          value={area}
+          onChange={(e) => setArea(e.target.value)}
+          className="px-2 py-1.5 rounded-md text-sm border"
+          style={{ background: 'var(--color-surface-raised)', borderColor: 'var(--color-border)', color: 'var(--color-ink-muted)' }}
+          aria-label="Filter by area"
+        >
+          <option value="">All areas</option>
+          {areas.map((value) => <option key={value} value={value}>{value}</option>)}
         </select>
 
         <input
@@ -536,7 +567,7 @@ export function AttendancePage() {
         </div>
       )}
 
-      {exportOpen && <ExportPanel coordinators={coordinators} onClose={() => setExportOpen(false)} />}
+      {exportOpen && <ExportPanel coordinators={coordinators} areas={areas} initialRole={role} initialArea={area} onClose={() => setExportOpen(false)} />}
 
       {manualEntryOpen && (
         <ManualEntryModal
