@@ -1,0 +1,94 @@
+services:
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    env_file: ../backend/.env
+    environment:
+      ENVIRONMENT: production
+    restart: unless-stopped
+    depends_on:
+      - redis
+    networks: [attendance]
+
+  worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    env_file: ../backend/.env
+    environment:
+      ENVIRONMENT: production
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    depends_on: [redis]
+    networks: [attendance]
+
+  absence-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    env_file: ../backend/.env
+    environment:
+      ENVIRONMENT: production
+    command: ["python", "-m", "app.absence_worker"]
+    restart: unless-stopped
+    depends_on: [redis]
+    networks: [attendance]
+
+  notification-worker:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.backend
+    env_file: ../backend/.env
+    environment:
+      ENVIRONMENT: production
+    command: ["python", "-m", "app.notification_worker"]
+    restart: unless-stopped
+    depends_on: [redis]
+    networks: [attendance]
+
+  frontend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile.frontend
+    restart: unless-stopped
+    networks: [attendance]
+
+  nginx:
+    image: nginx:1.29-alpine
+    restart: unless-stopped
+    depends_on: [backend, frontend]
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./certbot/www:/var/www/certbot:ro
+      - ./letsencrypt:/etc/letsencrypt:ro
+    networks: [attendance]
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes", "--save", "60", "1000"]
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+    networks:
+      - attendance
+
+  mongo:
+    profiles: [mongodb]
+    image: mongo:8
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - attendance
+
+networks:
+  attendance:
+    driver: bridge
+
+volumes:
+  mongo-data:
+  redis-data:

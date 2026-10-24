@@ -1,0 +1,16 @@
+services:
+  backend:
+    env_file:
+      - ../backend/.env.mssql
+
+  worker:
+    env_file:
+      - ../backend/.env.mssql
+
+  absence-worker:
+    env_file:
+      - ../backend/.env.mssql
+
+  notification-worker:
+    env_file:
+      - ../backend/.env.mssql
