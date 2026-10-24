@@ -11,7 +11,7 @@ from app.db.database import (
     _phone_number_is_registered,
     create_manual_attendance,
     delete_coordinator_if_unassigned,
-    delete_employee_without_attendance,
+    delete_employee_preserving_history,
     get_retryable_submission_today,
     has_submission_today,
     save_attendance_override,
@@ -300,28 +300,15 @@ class AttendanceListTests(unittest.IsolatedAsyncioTestCase):
                     "PC001", "2026-10-15", "P", "test", "admin"
                 )
 
-    async def test_superseded_attempts_do_not_block_participant_deletion(self):
-        from types import SimpleNamespace
+    async def test_attendance_and_overrides_do_not_block_participant_deletion(self):
+        with patch(
+            "app.db.mssql.delete_employee_preserving_history_transactional",
+            new=AsyncMock(return_value=0),
+        ) as delete_employee:
+            result = await delete_employee_preserving_history("EMP003")
 
-        database = SimpleNamespace(
-            roster=SimpleNamespace(
-                find_one=AsyncMock(return_value={"employee_id": "EMP003"}),
-                count_documents=AsyncMock(return_value=0),
-                delete_one=AsyncMock(return_value=SimpleNamespace(deleted_count=1)),
-            ),
-            submissions=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
-            attendance_overrides=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
-            face_embeddings=SimpleNamespace(delete_one=AsyncMock()),
-        )
-        with patch("app.db.database.get_db", return_value=database):
-            linked = await delete_employee_without_attendance("EMP003")
-
-        self.assertEqual(linked, (0, 0, 0))
-        self.assertEqual(
-            database.submissions.count_documents.await_args.args[0],
-            {"employee_id": "EMP003", "review_status": {"$ne": "superseded"}},
-        )
-        database.roster.delete_one.assert_awaited_once()
+        self.assertEqual(result, 0)
+        delete_employee.assert_awaited_once_with("EMP003")
 
     async def test_coordinator_historical_absence_does_not_block_delete(self):
         from types import SimpleNamespace

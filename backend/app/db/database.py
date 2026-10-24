@@ -514,38 +514,16 @@ async def update_employee_details(
     return RosterEntry(**doc)
 
 
-async def delete_employee_without_attendance(
-    employee_id: str,
-) -> tuple[int, int, int] | None:
-    """Delete a participant only when no current attendance or child links exist.
+async def delete_employee_preserving_history(employee_id: str) -> int | None:
+    """Remove a participant while preserving attendance history and overrides.
 
-    Superseded submissions are kept as audit history and do not block deletion.
-    Returns counts of current attendance, overrides and child assignments, or
-    None if the participant does not exist.
+    Child assignments block deletion until they are reassigned. Returns the
+    remaining child count, zero when deleted, or None when the participant
+    does not exist.
     """
-    db = get_db()
-    if await db.roster.find_one({"employee_id": employee_id}, {"_id": 1}) is None:
-        return None
+    from app.db.mssql import delete_employee_preserving_history_transactional
 
-    attendance_count = await db.submissions.count_documents({
-        "employee_id": employee_id,
-        "review_status": {"$ne": "superseded"},
-    })
-    override_count = await db.attendance_overrides.count_documents(
-        {"employee_id": employee_id}
-    )
-    child_count = await db.roster.count_documents(
-        {"parent_employee_id": employee_id}
-    )
-    if attendance_count or override_count or child_count:
-        return attendance_count, override_count, child_count
-
-    result = await db.roster.delete_one({"employee_id": employee_id})
-    if result.deleted_count != 1:
-        return None
-
-    await db.face_embeddings.delete_one({"employee_id": employee_id})
-    return 0, 0, 0
+    return await delete_employee_preserving_history_transactional(employee_id)
 
 
 async def save_enrollment(employee_id: str, embeddings: list[list[float]]) -> None:

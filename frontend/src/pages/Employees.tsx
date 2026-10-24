@@ -101,7 +101,7 @@ export function EmployeesPage() {
   }
 
   async function removeEmployee(employee: Employee) {
-    if (!window.confirm(`Delete ${employee.name} (${employee.employee_id})? Current attendance records, overrides, and child assignments must be cleared first. Superseded attempt history is retained for audit.`)) {
+    if (!window.confirm(`Delete ${employee.name} (${employee.employee_id}) from the participant list? Attendance records and status changes will remain in attendance history. Reassign any child participants first.`)) {
       return;
     }
 

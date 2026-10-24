@@ -691,7 +691,7 @@ async def delete_attendance_submission_transactional(submission_id: str) -> bool
         if employee_id and attendance_date:
             await connection.execute(
                 text(
-                    "DELETE FROM [dbo].[attendance_overrides] "
+                    "DELETE FROM [dbo].[attendance_attendance_overrides] "
                     "WHERE JSON_VALUE([data_json], '$.employee_id') "
                     "COLLATE Latin1_General_100_BIN2=:employee_id "
                     "AND JSON_VALUE([data_json], '$.attendance_date') "
@@ -700,6 +700,51 @@ async def delete_attendance_submission_transactional(submission_id: str) -> bool
                 {"employee_id": employee_id, "attendance_date": attendance_date},
             )
         return True
+
+
+async def delete_employee_preserving_history_transactional(
+    employee_id: str,
+) -> int | None:
+    """Delete a roster entry and face enrollment without deleting attendance history."""
+    engine = get_engine()
+    async with engine.begin() as connection:
+        row = (await connection.execute(
+            text(
+                "SELECT [id] FROM [dbo].[attendance_roster] WITH (UPDLOCK, HOLDLOCK) "
+                "WHERE JSON_VALUE([data_json], '$.employee_id') "
+                "COLLATE Latin1_General_100_BIN2=:employee_id"
+            ),
+            {"employee_id": employee_id},
+        )).first()
+        if row is None:
+            return None
+
+        child_count = int((await connection.execute(
+            text(
+                "SELECT COUNT_BIG(*) FROM [dbo].[attendance_roster] WITH (UPDLOCK, HOLDLOCK) "
+                "WHERE JSON_VALUE([data_json], '$.parent_employee_id') "
+                "COLLATE Latin1_General_100_BIN2=:employee_id"
+            ),
+            {"employee_id": employee_id},
+        )).scalar_one())
+        if child_count:
+            return child_count
+
+        await connection.execute(
+            text(
+                "DELETE FROM [dbo].[attendance_face_embeddings] "
+                "WHERE JSON_VALUE([data_json], '$.employee_id') "
+                "COLLATE Latin1_General_100_BIN2=:employee_id"
+            ),
+            {"employee_id": employee_id},
+        )
+        result = await connection.execute(
+            text("DELETE FROM [dbo].[attendance_roster] WHERE [id]=:id"),
+            {"id": str(row.id)},
+        )
+        if result.rowcount != 1:
+            return None
+        return 0
 
 
 async def ensure_schema() -> None:

@@ -53,7 +53,7 @@ from app.db.database import (
     create_manual_attendance,
     delete_attendance_submission,
     delete_coordinator_if_unassigned,
-    delete_employee_without_attendance,
+    delete_employee_preserving_history,
     register_webhook_event,
     mark_webhook_queued,
     normalize_date_str,
@@ -467,24 +467,21 @@ async def patch_employee(
 async def delete_employee(
     employee_id: str, admin: AdminUser = Depends(get_current_admin)
 ):
-    """Delete a participant with no current attendance entries or child links."""
-    linked_records = await delete_employee_without_attendance(employee_id)
-    if linked_records is None:
+    """Delete a roster entry while retaining its attendance history."""
+    child_count = await delete_employee_preserving_history(employee_id)
+    if child_count is None:
         raise HTTPException(
             status_code=404, detail=f"No employee found with employee_id: {employee_id}"
         )
-    attendance_count, override_count, child_count = linked_records
-    if attendance_count or override_count or child_count:
+    if child_count:
         raise HTTPException(
             status_code=409,
             detail=(
-                f"Cannot delete participant {employee_id}: {attendance_count} current "
-                f"attendance record(s), {override_count} attendance override(s), and "
-                f"{child_count} child assignment(s) remain. Superseded attempt history "
-                "is retained and does not block deletion."
+                f"Cannot delete participant {employee_id}: {child_count} child "
+                "assignment(s) remain. Reassign them first."
             ),
         )
-    return {"status": "deleted"}
+    return {"status": "deleted", "attendance_history": "preserved"}
 
 
 @app.get("/employees")

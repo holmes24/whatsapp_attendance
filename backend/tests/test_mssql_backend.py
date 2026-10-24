@@ -1,4 +1,6 @@
 import asyncio
+import json
+from types import SimpleNamespace
 
 from app.config import Settings, settings
 from app.db.mssql import (
@@ -7,7 +9,10 @@ from app.db.mssql import (
     _index_expression,
     _matches,
     _sql_filter,
+    _table_name,
     build_database_url,
+    delete_employee_preserving_history_transactional,
+    delete_attendance_submission_transactional,
 )
 
 
@@ -122,3 +127,111 @@ def test_settings_use_sql_server_as_the_only_database(monkeypatch):
     monkeypatch.setenv("MSSQL_SERVER", "sql-prod.example.internal")
 
     assert Settings(_env_file=None).mssql_server == "sql-prod.example.internal"
+
+
+def test_attendance_delete_uses_the_actual_override_collection_table(monkeypatch):
+    class FakeResult:
+        def __init__(self, row=None, rowcount=0):
+            self.row = row
+            self.rowcount = rowcount
+
+        def first(self):
+            return self.row
+
+    class FakeConnection:
+        def __init__(self):
+            self.statements = []
+
+        async def execute(self, statement, _parameters=None):
+            sql = str(statement)
+            self.statements.append(sql)
+            if sql.startswith("SELECT [data_json]"):
+                return FakeResult(SimpleNamespace(data_json=json.dumps({
+                    "employee_id": "EMP001",
+                    "attendance_date": "2026-10-24",
+                })))
+            if sql.startswith("DELETE FROM [dbo].[attendance_submissions]"):
+                return FakeResult(rowcount=1)
+            return FakeResult()
+
+    class FakeEngine:
+        def __init__(self):
+            self.connection = FakeConnection()
+
+        async def __aenter__(self):
+            return self.connection
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def begin(self):
+            return self
+
+    engine = FakeEngine()
+    monkeypatch.setattr("app.db.mssql.get_engine", lambda: engine)
+
+    assert asyncio.run(delete_attendance_submission_transactional("a" * 24))
+    assert engine.connection.statements[-1].startswith(
+        f"DELETE FROM {_table_name('attendance_overrides')}"
+    )
+
+
+def test_employee_delete_preserves_attendance_and_overrides_atomically(monkeypatch):
+    class FakeResult:
+        def __init__(self, row=None, rowcount=0, count=0):
+            self.row = row
+            self.rowcount = rowcount
+            self.count = count
+
+        def first(self):
+            return self.row
+
+        def scalar_one(self):
+            return self.count
+
+    class FakeConnection:
+        def __init__(self, child_count=0):
+            self.child_count = child_count
+            self.statements = []
+
+        async def execute(self, statement, _parameters=None):
+            sql = str(statement)
+            self.statements.append(sql)
+            if sql.startswith("SELECT [id] FROM [dbo].[attendance_roster]"):
+                return FakeResult(SimpleNamespace(id="roster-row"))
+            if sql.startswith("SELECT COUNT_BIG(*)"):
+                return FakeResult(count=self.child_count)
+            return FakeResult(rowcount=1)
+
+    class FakeEngine:
+        def __init__(self, child_count=0):
+            self.connection = FakeConnection(child_count)
+
+        async def __aenter__(self):
+            return self.connection
+
+        async def __aexit__(self, *_args):
+            return False
+
+        def begin(self):
+            return self
+
+    engine = FakeEngine()
+    monkeypatch.setattr("app.db.mssql.get_engine", lambda: engine)
+
+    assert asyncio.run(delete_employee_preserving_history_transactional("EMP002")) == 0
+    deletes = [sql for sql in engine.connection.statements if sql.startswith("DELETE")]
+    assert len(deletes) == 2
+    assert any("attendance_face_embeddings" in sql for sql in deletes)
+    assert any("attendance_roster" in sql for sql in deletes)
+    assert all("attendance_submissions" not in sql for sql in deletes)
+    assert all("attendance_attendance_overrides" not in sql for sql in deletes)
+
+    blocked_engine = FakeEngine(child_count=2)
+    monkeypatch.setattr("app.db.mssql.get_engine", lambda: blocked_engine)
+    assert asyncio.run(
+        delete_employee_preserving_history_transactional("EMP002")
+    ) == 2
+    assert not any(
+        sql.startswith("DELETE") for sql in blocked_engine.connection.statements
+    )
