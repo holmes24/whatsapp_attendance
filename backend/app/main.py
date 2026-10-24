@@ -24,7 +24,7 @@ from app.auth import (
     verify_password,
 )
 from app.config import settings
-from app.db.mongodb import (
+from app.db.database import (
     AdminUser,
     CoordinatorRegistrationRequest,
     CoordinatorUpdateRequest,
@@ -136,19 +136,12 @@ async def on_startup():
                 missing.append("CORS_ORIGINS must not contain *")
         if missing:
             raise RuntimeError("Production security configuration invalid: " + ", ".join(missing))
-    """
-    Ensures MongoDB indexes exist before the app serves traffic — this is
-    what makes duplicate phone_number rejection and unique employee_id
-    actually enforced. Previously this only happened if someone manually
-    ran scripts/test_db_connection.py first, which was a real gap (caught
-    via testing — see conversation history for details).
-    """
+    """Initialize SQL Server tables/indexes and the Redis consumer group."""
     await ensure_indexes()
     redis = get_redis()
     await ensure_stream_group(redis, ATTENDANCE_STREAM, "attendance-workers")
     await redis.close()
-    database_label = "SQL Server" if settings.database_backend == "mssql" else "MongoDB"
-    logger.info("%s indexes and Redis queue initialized", database_label)
+    logger.info("SQL Server schema and Redis queue initialized")
 
 
 @app.get("/health")
@@ -167,8 +160,7 @@ async def health():
     except Exception:
         database_ok = False
     status = "ok" if redis_ok and database_ok else "degraded"
-    database_key = "mssql" if settings.database_backend == "mssql" else "mongodb"
-    return {"status": status, "redis": redis_ok, database_key: database_ok}
+    return {"status": status, "redis": redis_ok, "mssql": database_ok}
 
 
 @app.post("/webhook/interakt")
@@ -179,7 +171,7 @@ async def interakt_webhook(
     """Validate, deduplicate, and durably enqueue an Interakt webhook.
 
     The HTTP request does no AI work. Redis Streams provides the durable handoff
-    to the unified worker, while MongoDB stores the idempotency record.
+    to the unified worker, while SQL Server stores the idempotency record.
     """
     raw_body = await request.body()
     if not verify_webhook_signature(raw_body, interakt_signature or ""):
@@ -219,7 +211,7 @@ async def interakt_webhook(
     event_id = payload.data.message.id
     inserted = await register_webhook_event(event_id, payload.model_dump(mode="json"))
 
-    # Duplicate events are safe to enqueue again: the worker claims the Mongo
+    # Duplicate events are safe to enqueue again: the worker claims the SQL
     # event atomically, so only one copy can execute the AI pipeline. Re-enqueue
     # is intentional because a prior delivery may have crashed after persistence.
     if not inserted:
@@ -228,7 +220,7 @@ async def interakt_webhook(
     sender_phone = payload.data.customer.phone_number
     if settings.admin_phone_number and sender_phone == settings.admin_phone_number:
         await update_admin_last_seen(datetime.now(timezone.utc))
-        from app.db.mongodb import complete_webhook_event
+        from app.db.database import complete_webhook_event
         await complete_webhook_event(event_id)
         return {"status": "admin_checkin", "duplicate": not inserted}
 

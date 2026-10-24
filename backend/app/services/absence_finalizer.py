@@ -3,7 +3,7 @@ Run this from one backend scheduler only to avoid duplicate inserts across repli
 """
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
-from app.db.mongodb import (
+from app.db.database import (
     delete_system_absences_today,
     get_db,
     has_submission_today,

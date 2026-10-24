@@ -76,19 +76,9 @@ services:
     networks:
       - attendance
 
-  mongo:
-    profiles: [mongodb]
-    image: mongo:8
-    restart: unless-stopped
-    volumes:
-      - mongo-data:/data/db
-    networks:
-      - attendance
-
 networks:
   attendance:
     driver: bridge
 
 volumes:
-  mongo-data:
   redis-data:

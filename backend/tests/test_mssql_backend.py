@@ -70,7 +70,7 @@ def test_sparse_unique_index_expression_has_balanced_computed_column_parentheses
     assert expression.endswith("))")
 
 
-def test_cursor_supports_projection_and_mongo_sort_signature():
+def test_cursor_supports_projection_and_document_sort_signature():
     class FakeCollection:
         async def _find_documents(self, _query):
             return [
@@ -118,7 +118,7 @@ def test_mssql_url_uses_configured_local_database_and_integrated_auth(monkeypatc
     assert url.query["Trusted_Connection"] == "yes"
 
 
-def test_db_backend_uses_the_documented_environment_variable(monkeypatch):
-    monkeypatch.setenv("DB_BACKEND", "mssql")
+def test_settings_use_sql_server_as_the_only_database(monkeypatch):
+    monkeypatch.setenv("MSSQL_SERVER", "sql-prod.example.internal")
 
-    assert Settings(_env_file=None).database_backend == "mssql"
+    assert Settings(_env_file=None).mssql_server == "sql-prod.example.internal"

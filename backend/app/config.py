@@ -7,7 +7,6 @@ after the pilot period against real submission data.
 
 import os
 
-from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -34,25 +33,18 @@ class Settings(BaseSettings):
 
     cors_origins: str = os.getenv("CORS_ORIGINS", "http://localhost:5173")
 
-    # --- Database (MongoDB) ---
-    mongodb_url: str = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-    mongodb_db_name: str = os.getenv("MONGODB_DB_NAME", "attendance_agent")
-    mongodb_tls: bool = os.getenv("MONGODB_TLS", "false").lower() == "true"
-    database_backend: str = Field(
-        default=os.getenv("DB_BACKEND", "mongodb").strip().lower(),
-        validation_alias="DB_BACKEND",
-    )
-    mssql_server: str = os.getenv("MSSQL_SERVER", "localhost")
-    mssql_database: str = os.getenv("MSSQL_DATABASE", "attendance_agent_local")
+    # --- SQL Server system of record ---
+    mssql_server: str = os.getenv("MSSQL_SERVER", "sql-server.example.internal")
+    mssql_database: str = os.getenv("MSSQL_DATABASE", "attendance_agent")
     mssql_driver: str = os.getenv("MSSQL_DRIVER", "ODBC Driver 18 for SQL Server")
     mssql_trusted_connection: bool = (
-        os.getenv("MSSQL_TRUSTED_CONNECTION", "true").lower() == "true"
+        os.getenv("MSSQL_TRUSTED_CONNECTION", "false").lower() == "true"
     )
     mssql_username: str = os.getenv("MSSQL_USERNAME", "")
     mssql_password: str = os.getenv("MSSQL_PASSWORD", "")
-    mssql_encrypt: bool = os.getenv("MSSQL_ENCRYPT", "false").lower() == "true"
+    mssql_encrypt: bool = os.getenv("MSSQL_ENCRYPT", "true").lower() == "true"
     mssql_trust_server_certificate: bool = (
-        os.getenv("MSSQL_TRUST_SERVER_CERTIFICATE", "true").lower() == "true"
+        os.getenv("MSSQL_TRUST_SERVER_CERTIFICATE", "false").lower() == "true"
     )
     app_timezone: str = os.getenv("APP_TIMEZONE", "Asia/Kolkata")
 

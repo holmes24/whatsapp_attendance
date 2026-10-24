@@ -2,15 +2,13 @@
 import asyncio
 import logging
 from app.services.absence_finalizer import finalize_absences
-from app.config import settings
-from app.db.mongodb import ensure_indexes
+from app.db.database import ensure_indexes
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger('absence_worker')
 
 async def run():
-    if settings.database_backend == "mssql":
-        await ensure_indexes()
+    await ensure_indexes()
     while True:
         try:
             await finalize_absences()

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from app.db.mongodb import get_db
+from app.db.database import get_db
 from app.services.location_lookup import resolve_location, DATASET_ID
 
 
@@ -39,10 +39,8 @@ async def main(apply=False):
                 counts["would_update"] += 1
         print(json.dumps(counts))
     finally:
-        from app.config import settings
-        if settings.database_backend == "mssql":
-            from app.db.mssql import close
-            await close()
+        from app.db.mssql import close
+        await close()
 
 
 if __name__ == "__main__":

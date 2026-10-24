@@ -1,43 +1,21 @@
-"""
-MongoDB connection (async, via Motor) and roster lookup.
-"""
+"""Shared attendance models and persistence operations backed by SQL Server."""
 
 import logging
 import re
 from datetime import datetime, timezone
 from typing import Literal, Optional
 
-from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
-from pymongo import ReturnDocument
 
-from app.config import settings
 from app.services.attendance_grid import marker_for_submission
 from app.services.shift_check import role_shift_defaults
 
 logger = logging.getLogger("db")
 
-_client: AsyncIOMotorClient | None = None
-
-
-def get_client() -> AsyncIOMotorClient:
-    global _client
-    if _client is None:
-        _client = AsyncIOMotorClient(settings.mongodb_url, tls=settings.mongodb_tls)
-    return _client
-
-
 def get_db():
-    if settings.database_backend == "mssql":
-        from app.db.mssql import get_db as get_mssql_db
+    from app.db.mssql import get_db as get_mssql_db
 
-        return get_mssql_db()
-    if settings.database_backend != "mongodb":
-        raise RuntimeError(
-            f"Unsupported DB_BACKEND {settings.database_backend!r}; "
-            "expected 'mongodb' or 'mssql'"
-        )
-    return get_client()[settings.mongodb_db_name]
+    return get_mssql_db()
 
 
 def normalize_date_str(val: str | None) -> str:
@@ -227,34 +205,9 @@ async def get_roster_by_employee_id(employee_id: str) -> RosterEntry | None:
 
 
 async def ensure_indexes() -> None:
-    if settings.database_backend == "mssql":
-        from app.db.mssql import ensure_indexes as ensure_mssql_indexes
+    from app.db.mssql import ensure_indexes as ensure_mssql_indexes
 
-        await ensure_mssql_indexes()
-        return
-    if settings.database_backend != "mongodb":
-        raise RuntimeError(
-            f"Unsupported DB_BACKEND {settings.database_backend!r}; "
-            "expected 'mongodb' or 'mssql'"
-        )
-    db = get_db()
-    await db.roster.create_index("phone_number", unique=True)
-    await db.roster.create_index("employee_id", unique=True)
-    await db.roster.create_index("pc_id")
-    await db.coordinators.create_index("pc_id", unique=True)
-    await db.submissions.create_index("employee_id")
-    await db.submissions.create_index("attendance_date")
-    await db.submissions.create_index([("employee_id", 1), ("attendance_date", 1)])
-    await db.submissions.create_index("image_hash")
-    await db.face_embeddings.create_index("employee_id", unique=True)
-    await db.admin_users.create_index("username", unique=True)
-    await db.webhook_events.create_index("event_id", unique=True)
-    await db.submissions.create_index("event_id", unique=True, sparse=True)
-    await db.notifications.create_index("notification_id", unique=True)
-    await db.notifications.create_index("status")
-    await db.attendance_overrides.create_index(
-        [("employee_id", 1), ("attendance_date", 1)], unique=True
-    )
+    await ensure_mssql_indexes()
 
 
 async def migrate_legacy_reporting_hierarchy(*, dry_run: bool = False) -> int:
@@ -315,7 +268,7 @@ async def get_next_pc_id() -> str:
         {"_id": "pc_id"},
         {"$inc": {"seq": 1}},
         upsert=True,
-        return_document=ReturnDocument.AFTER,
+        return_document=True,
     )
     return f"PC{result['seq']:03d}"
 
@@ -399,7 +352,7 @@ async def update_coordinator(
     doc = await db.coordinators.find_one_and_update(
         {"pc_id": pc_id},
         {"$set": set_fields},
-        return_document=ReturnDocument.AFTER,
+        return_document=True,
     )
     if doc is None:
         return None
@@ -430,7 +383,7 @@ async def get_next_employee_id() -> str:
         {"_id": "employee_id"},
         {"$inc": {"seq": 1}},
         upsert=True,
-        return_document=ReturnDocument.AFTER,
+        return_document=True,
     )
     seq = result["seq"]
     return f"EMP{seq:03d}"
@@ -548,7 +501,7 @@ async def update_employee_details(
         doc = await db.roster.find_one_and_update(
             {"employee_id": employee_id},
             {"$set": set_fields},
-            return_document=ReturnDocument.AFTER,
+            return_document=True,
         )
     except Exception as exc:
         if "duplicate key" in str(exc).lower():
@@ -772,41 +725,9 @@ async def list_attendance(
 
 
 async def delete_attendance_submission(submission_id: str) -> bool:
-    if settings.database_backend == "mssql":
-        from app.db.mssql import delete_attendance_submission_transactional
+    from app.db.mssql import delete_attendance_submission_transactional
 
-        return await delete_attendance_submission_transactional(submission_id)
-
-    from bson import ObjectId
-    from bson.errors import InvalidId
-
-    try:
-        object_id = ObjectId(submission_id)
-    except InvalidId:
-        return False
-
-    db = get_db()
-    submission = await db.submissions.find_one({"_id": object_id})
-    if submission is None:
-        return False
-
-    result = await db.submissions.delete_one({"_id": object_id})
-    if result.deleted_count != 1:
-        return False
-
-    # Status changes are stored separately from photo submissions. If an
-    # admin deletes that attendance row, remove its same-day override too;
-    # otherwise the deleted status still wins in the grid and blocks retries.
-    employee_id = submission.get("employee_id")
-    attendance_date = normalize_date_str(
-        submission.get("attendance_date") or submission.get("received_at_utc")
-    )
-    if employee_id and attendance_date:
-        await db.attendance_overrides.delete_one({
-            "employee_id": employee_id,
-            "attendance_date": attendance_date,
-        })
-    return True
+    return await delete_attendance_submission_transactional(submission_id)
 
 
 async def has_submission_today(
@@ -890,25 +811,20 @@ async def delete_system_absences_today(employee_id: str, date_str: str) -> None:
 async def resolve_flagged_submission(
     submission_id: str, decision: str, resolved_by: str, reason: str | None = None
 ):
-    from bson import ObjectId
-
     if decision not in ("approved", "rejected"):
         raise ValueError('decision must be "approved" or "rejected"')
 
-    db = get_db()
-    try:
-        obj_id = ObjectId(submission_id)
-    except Exception:
+    if not re.fullmatch(r"[0-9a-f]{24}", submission_id):
         return None
-
-    doc = await db.submissions.find_one({"_id": obj_id})
+    db = get_db()
+    doc = await db.submissions.find_one({"_id": submission_id})
     if doc is None or doc.get("verdict") != "flagged":
         return None
 
     attendance_status = "present" if decision == "approved" else "absent"
 
     await db.submissions.update_one(
-        {"_id": obj_id},
+        {"_id": submission_id},
         {
             "$set": {
                 "review_status": decision,
@@ -919,7 +835,7 @@ async def resolve_flagged_submission(
             }
         },
     )
-    updated = await db.submissions.find_one({"_id": obj_id})
+    updated = await db.submissions.find_one({"_id": submission_id})
     updated["_id"] = str(updated["_id"])
     return updated
 
@@ -1142,7 +1058,7 @@ async def claim_webhook_event(event_id: str) -> bool:
     doc = await db.webhook_events.find_one_and_update(
         {"event_id": event_id, "status": {"$in": ["received", "queued", "failed"]}},
         {"$set": {"status": "processing", "processing_started_at": datetime.now(timezone.utc)}},
-        return_document=ReturnDocument.AFTER,
+        return_document=True,
     )
     return doc is not None
 
@@ -1187,7 +1103,7 @@ async def claim_notification(notification_id: str) -> bool:
     doc = await db.notifications.find_one_and_update(
         {"notification_id": notification_id, "status": {"$in": ["pending", "retry"]}},
         {"$set": {"status": "processing", "processing_started_at": datetime.now(timezone.utc)}},
-        return_document=ReturnDocument.AFTER,
+        return_document=True,
     )
     return doc is not None
 

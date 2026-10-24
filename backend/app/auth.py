@@ -14,7 +14,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.config import settings
-from app.db.mongodb import AdminUser, get_admin_user
+from app.db.database import AdminUser, get_admin_user
 
 logger = logging.getLogger("auth")
 

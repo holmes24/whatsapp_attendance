@@ -4,7 +4,7 @@ import logging
 from datetime import datetime, timezone
 
 from app.config import settings
-from app.db.mongodb import (
+from app.db.database import (
     claim_notification,
     get_db,
     mark_notification_skipped,
@@ -78,8 +78,7 @@ async def reclaim_pending(redis) -> None:
 
 
 async def run() -> None:
-    if settings.database_backend == "mssql":
-        await ensure_indexes()
+    await ensure_indexes()
     redis = get_redis()
     await ensure_stream_group(redis, NOTIFICATION_STREAM, GROUP)
     logger.info("Notification worker started as %s", CONSUMER)

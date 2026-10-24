@@ -4,7 +4,6 @@ pydantic
 pydantic-settings
 httpx
 python-multipart
-motor 
 SQLAlchemy[asyncio]>=2.0,<3
 aioodbc>=0.5,<1
 insightface

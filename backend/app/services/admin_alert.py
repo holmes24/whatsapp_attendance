@@ -15,7 +15,7 @@ from datetime import datetime, timedelta, timezone
 import httpx
 
 from app.config import settings
-from app.db.mongodb import get_admin_last_seen
+from app.db.database import get_admin_last_seen
 from app.services.whatsapp_reply import send_text_reply
 
 logger = logging.getLogger("admin_alert")

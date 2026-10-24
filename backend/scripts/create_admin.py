@@ -11,7 +11,7 @@ import sys
 sys.path.insert(0, ".")
 
 from app.auth import hash_password
-from app.db.mongodb import create_admin_user, ensure_indexes
+from app.db.database import create_admin_user, ensure_indexes
 
 
 async def main():

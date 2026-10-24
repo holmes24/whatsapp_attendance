@@ -8,7 +8,7 @@ from fastapi import HTTPException
 from openpyxl import load_workbook
 from PIL import Image
 
-from app.db.mongodb import (
+from app.db.database import (
     AdminUser,
     Coordinator,
     RosterEntry,
@@ -323,7 +323,7 @@ class FaceSizeReviewTests(unittest.TestCase):
 
 class DirectCoordinatorHierarchyTests(unittest.IsolatedAsyncioTestCase):
     async def test_all_participant_roles_report_directly_to_project_coordinator(self):
-        with patch("app.db.mongodb.get_coordinator_by_id") as get_coordinator:
+        with patch("app.db.database.get_coordinator_by_id") as get_coordinator:
             get_coordinator.return_value = object()
             for role in ("FS", "LS", "LSS"):
                 self.assertEqual(
@@ -358,14 +358,14 @@ class DirectCoordinatorHierarchyTests(unittest.IsolatedAsyncioTestCase):
             )
         )
         with (
-            patch("app.db.mongodb.get_db", return_value=database),
+            patch("app.db.database.get_db", return_value=database),
             patch(
-                "app.db.mongodb.get_roster_by_employee_id",
+                "app.db.database.get_roster_by_employee_id",
                 new_callable=AsyncMock,
                 side_effect=lambda employee_id: parent_entries.get(employee_id),
             ),
             patch(
-                "app.db.mongodb.get_coordinator_by_id",
+                "app.db.database.get_coordinator_by_id",
                 new_callable=AsyncMock,
                 side_effect=lambda pc_id: object() if pc_id == "PC001" else None,
             ),

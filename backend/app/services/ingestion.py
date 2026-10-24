@@ -8,7 +8,7 @@ from datetime import datetime
 from uuid import NAMESPACE_URL, uuid5
 from zoneinfo import ZoneInfo
 
-from app.db.mongodb import (
+from app.db.database import (
     create_notification,
     get_db,
     get_enrollment,
@@ -86,8 +86,8 @@ def _notification_id(event_id: str, kind: str) -> str:
 
 
 async def _queue_notification(job: dict) -> None:
-    mongo_job = dict(job)
-    await create_notification(mongo_job)
+    notification_job = dict(job)
+    await create_notification(notification_job)
 
     redis = get_redis()
     try:
@@ -457,4 +457,4 @@ async def process_attendance_submission(
 
     await queue_submission_notifications(event_id, payload, submission)
     logger.info("Attendance event %s completed verdict=%s issues=%s", event_id, verdict, issues or "none")
-    
+

@@ -1,5 +1,5 @@
 """
-Build date-wise attendance results from MongoDB submissions.
+Build date-wise attendance results from persisted submissions.
 
 Markers:
     P   = Present and on time
@@ -41,7 +41,7 @@ def daterange(date_from: str, date_to: str) -> list[str]:
 
 
 def marker_for_submission(sub: dict | None) -> str:
-    """Convert one MongoDB submission into a daily attendance marker."""
+    """Convert one persisted submission into a daily attendance marker."""
     if not sub:
         return "A"
 

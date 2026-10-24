@@ -4,7 +4,7 @@ from datetime import datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from app.db.mongodb import RosterEntry, EmployeeRegistrationRequest, EmployeeUpdateRequest
+from app.db.database import RosterEntry, EmployeeRegistrationRequest, EmployeeUpdateRequest
 from app.services.ingestion import process_attendance_submission
 from app.services.ocr import OverlayData
 

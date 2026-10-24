@@ -1,7 +1,7 @@
 """SQL Server persistence with the document operations used by the app.
 
 Documents are stored as JSON in one table per logical collection. Indexed
-Mongo-style fields are materialized as computed columns, so uniqueness and
+Indexed JSON fields are materialized as computed columns, so uniqueness and
 lookup constraints are enforced by SQL Server rather than process memory.
 """
 
@@ -11,11 +11,11 @@ import hashlib
 import json
 import logging
 import re
+import secrets
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
 
-from bson import ObjectId
 from sqlalchemy import bindparam, text
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from sqlalchemy.engine import URL
@@ -124,8 +124,6 @@ def _index_expression(field: str, sparse: bool = False) -> str:
 def _json_default(value: Any) -> str:
     if isinstance(value, (datetime, date)):
         return value.isoformat()
-    if isinstance(value, ObjectId):
-        return str(value)
     raise TypeError(f"Value of type {type(value).__name__} is not JSON serializable")
 
 
@@ -134,10 +132,7 @@ def _encode(document: dict) -> str:
 
 
 def _object_id(value: str) -> Any:
-    try:
-        return ObjectId(value)
-    except Exception:
-        return value
+    return str(value)
 
 
 def _decode(row: Any) -> dict:
@@ -147,10 +142,6 @@ def _decode(row: Any) -> dict:
 
 
 def _same(left: Any, right: Any) -> bool:
-    if isinstance(left, ObjectId):
-        left = str(left)
-    if isinstance(right, ObjectId):
-        right = str(right)
     return left == right
 
 
@@ -236,8 +227,6 @@ def _matches(document: dict, query: dict | None) -> bool:
 def _sql_scalar(value: Any) -> str:
     if isinstance(value, bool):
         return "true" if value else "false"
-    if isinstance(value, ObjectId):
-        return str(value)
     return str(value)
 
 
@@ -251,7 +240,7 @@ def _query_scalar(collection: str | None, field: str, value: Any) -> str:
 def _sql_filter(
     query: dict | None, params: dict, collection: str | None = None
 ) -> str | None:
-    """Compile the scalar Mongo query subset to SQL Server JSON predicates."""
+    """Compile supported document queries to SQL Server JSON predicates."""
     clauses = []
     for key, condition in (query or {}).items():
         if key in ("$or", "$and", "$nor"):
@@ -370,8 +359,6 @@ def _project(document: dict, projection: dict | None) -> dict:
 def _sort_value(value: Any) -> tuple[int, Any]:
     if value is None:
         return (0, "")
-    if isinstance(value, ObjectId):
-        return (1, str(value))
     return (1, value)
 
 
@@ -515,7 +502,7 @@ class Collection:
 
     async def insert_one(self, document: dict) -> InsertOneResult:
         stored = dict(document)
-        object_id = stored.get("_id") or ObjectId()
+        object_id = str(stored.get("_id") or secrets.token_hex(12))
         stored["_id"] = object_id
         await self._insert(stored)
         return InsertOneResult(object_id)
@@ -582,7 +569,7 @@ class Collection:
                 if not upsert:
                     return UpdateResult()
                 seed = {key: value for key, value in query.items() if not key.startswith("$") and not isinstance(value, dict)}
-                current = {"_id": ObjectId(), **seed}
+                current = {"_id": secrets.token_hex(12), **seed}
                 updated = _apply_update(current, update, inserting=True)
                 await connection.execute(
                     text(f"INSERT INTO {self.table} ([id], [data_json]) VALUES (:id, :body)"),
@@ -610,7 +597,7 @@ class Collection:
                 if not upsert:
                     return None
                 seed = {key: value for key, value in query.items() if not key.startswith("$") and not isinstance(value, dict)}
-                current = {"_id": ObjectId(), **seed}
+                current = {"_id": secrets.token_hex(12), **seed}
                 updated = _apply_update(current, update, inserting=True)
                 await connection.execute(
                     text(f"INSERT INTO {self.table} ([id], [data_json]) VALUES (:id, :body)"),
@@ -672,11 +659,7 @@ def get_db() -> Database:
 
 async def delete_attendance_submission_transactional(submission_id: str) -> bool:
     """Delete a photo record and its same-day status override atomically."""
-    from bson.errors import InvalidId
-
-    try:
-        object_id = ObjectId(submission_id)
-    except InvalidId:
+    if not re.fullmatch(r"[0-9a-f]{24}", submission_id):
         return False
 
     engine = get_engine()
@@ -686,7 +669,7 @@ async def delete_attendance_submission_transactional(submission_id: str) -> bool
                 "SELECT [data_json] FROM [dbo].[attendance_submissions] "
                 "WITH (UPDLOCK, HOLDLOCK) WHERE [id]=:id"
             ),
-            {"id": str(object_id)},
+            {"id": submission_id},
         )).first()
         if row is None:
             return False
@@ -694,7 +677,7 @@ async def delete_attendance_submission_transactional(submission_id: str) -> bool
         submission = json.loads(row.data_json)
         result = await connection.execute(
             text("DELETE FROM [dbo].[attendance_submissions] WHERE [id]=:id"),
-            {"id": str(object_id)},
+            {"id": submission_id},
         )
         if result.rowcount != 1:
             return False
@@ -702,7 +685,7 @@ async def delete_attendance_submission_transactional(submission_id: str) -> bool
         employee_id = submission.get("employee_id")
         attendance_date = submission.get("attendance_date")
         if not attendance_date:
-            from app.db.mongodb import normalize_date_str
+            from app.db.database import normalize_date_str
 
             attendance_date = normalize_date_str(submission.get("received_at_utc"))
         if employee_id and attendance_date:

@@ -7,8 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.config import settings
-from app.db.mongodb import get_client, migrate_legacy_reporting_hierarchy
+from app.db.database import migrate_legacy_reporting_hierarchy
 
 
 async def main(apply: bool) -> None:
@@ -19,12 +18,9 @@ async def main(apply: bool) -> None:
         if not apply:
             print("Review the result, back up the database, then rerun with --apply.")
     finally:
-        if settings.database_backend == "mssql":
-            from app.db.mssql import close
+        from app.db.mssql import close
 
-            await close()
-        else:
-            get_client().close()
+        await close()
 
 
 if __name__ == "__main__":

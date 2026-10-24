@@ -20,7 +20,7 @@ logger = logging.getLogger("face_match")
 def enroll_embeddings(reference_images: list[bytes]) -> list[list[float]]:
     """
     Convert up to 5 reference selfies into stored embeddings (as plain
-    lists, for MongoDB storage — numpy arrays aren't directly serializable).
+    lists for JSON storage — numpy arrays aren't directly serializable.
     Skips any image where no face is detected, logs a warning.
     """
     embeddings = []

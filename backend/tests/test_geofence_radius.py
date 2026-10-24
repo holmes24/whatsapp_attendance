@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 from pydantic import ValidationError
 
-from app.db.mongodb import (
+from app.db.database import (
     Coordinator,
     EmployeeRegistrationRequest,
     RosterEntry,
@@ -78,7 +78,7 @@ class GeofenceRadiusTests(unittest.TestCase):
 class SubmissionDuplicateQueryTests(unittest.IsolatedAsyncioTestCase):
     async def test_system_absence_is_excluded_for_late_attendance(self):
         database = _FakeDatabase()
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             exists = await has_submission_today(
                 "PC001", "2026-10-14", include_system_absences=False
             )
@@ -91,7 +91,7 @@ class SubmissionDuplicateQueryTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_system_absence_is_included_for_absence_finalization(self):
         database = _FakeDatabase()
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             await has_submission_today("PC001", "2026-10-14")
 
         self.assertNotIn("$nor", database.submissions.query)
@@ -105,7 +105,7 @@ class RetryableSubmissionTests(unittest.IsolatedAsyncioTestCase):
             "verdict": "flagged",
             "review_status": "pending",
         }
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             result = await get_retryable_submission_today("EMP001", "2026-10-15")
 
         self.assertEqual(result, database.submissions.result)
@@ -117,7 +117,7 @@ class RetryableSubmissionTests(unittest.IsolatedAsyncioTestCase):
             "verdict": "verified",
             "review_status": "n/a",
         }
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             result = await get_retryable_submission_today("EMP001", "2026-10-15")
 
         self.assertIsNone(result)
@@ -125,7 +125,7 @@ class RetryableSubmissionTests(unittest.IsolatedAsyncioTestCase):
     async def test_manual_attendance_override_prevents_retry(self):
         database = _FakeDatabase()
         database.attendance_overrides.result = {"_id": "override"}
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             result = await get_retryable_submission_today("EMP001", "2026-10-15")
 
         self.assertIsNone(result)
@@ -203,7 +203,7 @@ class PhoneUniquenessTests(unittest.IsolatedAsyncioTestCase):
     async def test_phone_conflicts_are_checked_across_people_and_roles(self):
         database = _FakeDatabase()
         database.roster.result = {"employee_id": "EMP003"}
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             roster_conflict = await _phone_number_is_registered(
                 "1234567890", exclude_pc_id="PC001"
             )
@@ -213,7 +213,7 @@ class PhoneUniquenessTests(unittest.IsolatedAsyncioTestCase):
 
         database = _FakeDatabase()
         database.coordinators.result = {"pc_id": "PC002"}
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             coordinator_conflict = await _phone_number_is_registered(
                 "1234567890", exclude_employee_id="EMP003", exclude_pc_id="PC001"
             )
@@ -225,9 +225,9 @@ class PhoneUniquenessTests(unittest.IsolatedAsyncioTestCase):
 
 class AttendanceListTests(unittest.IsolatedAsyncioTestCase):
     async def test_project_coordinator_role_returns_no_attendance_people(self):
-        from app.db.mongodb import list_attendance_people
+        from app.db.database import list_attendance_people
 
-        with patch("app.db.mongodb.list_employees", new=AsyncMock()) as list_employees:
+        with patch("app.db.database.list_employees", new=AsyncMock()) as list_employees:
             people, total = await list_attendance_people(role="PC")
 
         self.assertEqual(people, [])
@@ -290,7 +290,7 @@ class AttendanceListTests(unittest.IsolatedAsyncioTestCase):
             pc_id="PC001",
         )
         with patch(
-            "app.db.mongodb.get_roster_by_employee_id",
+            "app.db.database.get_roster_by_employee_id",
             new=AsyncMock(return_value=coordinator),
         ):
             with self.assertRaisesRegex(ValueError, "not attendance participants"):
@@ -313,7 +313,7 @@ class AttendanceListTests(unittest.IsolatedAsyncioTestCase):
             attendance_overrides=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
             face_embeddings=SimpleNamespace(delete_one=AsyncMock()),
         )
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             linked = await delete_employee_without_attendance("EMP003")
 
         self.assertEqual(linked, (0, 0, 0))
@@ -333,7 +333,7 @@ class AttendanceListTests(unittest.IsolatedAsyncioTestCase):
             ),
             roster=SimpleNamespace(count_documents=AsyncMock(return_value=0)),
         )
-        with patch("app.db.mongodb.get_db", return_value=database):
+        with patch("app.db.database.get_db", return_value=database):
             linked = await delete_coordinator_if_unassigned("PC001")
 
         self.assertEqual(linked, 0)
